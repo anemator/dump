@@ -1,0 +1,3 @@
+(executables
+  (names battleship bool_eval bool_monad coin_counter camlisp pure_events
+         state_machine tictactoe))

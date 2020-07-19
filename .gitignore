@@ -1,0 +1,15 @@
+*.dSYM/
+*.log
+*.swp
+*~
+.bloop/
+.gradle/
+.idea/
+.merlin
+.metals/
+.mkdir
+/.vagrant/
+_build/
+a.out
+project/
+target/

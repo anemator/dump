@@ -1,0 +1,161 @@
+##############
+### CONFIG ###
+##############
+
+WITH_DIFF:=1
+ifdef fast
+	WITH_DIFF:=0
+endif
+
+ifeq (none,$(log))
+	LOG_INFO:=@
+	LOG_TRACE:=@
+else ifeq (detail,$(log))
+	LOG_INFO:=@
+	LOG_TRACE:=
+else ifeq (all,$(log))
+	LOG_INFO:=
+	LOG_TRACE:=
+else # ifeq (normal,$(log))
+	LOG_INFO:=
+	LOG_TRACE:=@
+endif
+
+CXX?=g++
+CXXFLAGS:=-fexceptions \
+	-fstrict-aliasing \
+	-pedantic \
+	-Wall \
+	-Wcast-align \
+	-Wcast-qual \
+	-Wdisabled-optimization \
+	-Wextra \
+	-Wformat \
+	-Wshadow \
+	-Wsign-conversion \
+	-Wundef \
+	-Wno-unused-parameter \
+	-Wno-unused-variable \
+	-Wno-variadic-macros \
+	-std=c++14 \
+	-x c++
+DEPFLAGS:=-MMD -MP
+MAKEFLAGS:=$(MAKEFLAGS) --jobs --load-average=80.0
+
+OSNAME:=$(shell uname -s)
+ifeq (Linux,$(OSNAME))
+	LDFLAGS:=$(LDFLAGS) -pthread
+endif
+
+ifeq (jenkins,$(shell echo $(BUILD_TAG) | awk -F'-' '{print $$1}'))
+	CI:=jenkins
+else
+	CI:=manual
+endif
+
+# Name build directory with architecture triplet, the current git
+# revision/hash and a flag indicating clean/dirty working directory.
+BUILDDIR:=./BUILD-$(OSNAME)_$(shell uname -r)_$(shell uname -m)
+DIRTY:=0
+ifeq (manual,$(CI))
+	BUILDDIR:=$(BUILDDIR)-$(shell git rev-parse --short HEAD)
+	ifneq (,$(shell git status --porcelain --untracked-files=no))
+		BUILDDIR:=$(BUILDDIR)-DIRTY
+		DIRTY:=1
+	endif
+else ifeq (jenkins,$(CI))
+	BUILDDIR:=$(BUILDDIR)-$(BUILD_ID)
+endif
+
+INCDIRS:=-I ./include
+SRCDIR:=./src
+
+SRCS:=elevator.cxx \
+	elevator_bank_panel.cxx \
+	elevator_scheduler.cxx \
+	main.cxx
+DEPS:=$(SRCS:%.cxx=$(BUILDDIR)/%.d)
+OBJS:=$(SRCS:%.cxx=$(BUILDDIR)/%.o)
+
+EXE:=$(BUILDDIR)/breakneck
+BUILD_INFO:=$(BUILDDIR)/info.txt
+PATCH_STAGING:=$(BUILDDIR)/patch.staging
+PATCH_WORKING:=$(BUILDDIR)/patch.working
+
+####################
+### USER TARGETS ###
+####################
+
+.PHONY: release
+release: CXXFLAGS+=-DNDEBUG
+release: BUILD_TYPE:=release
+release: __release
+
+.PHONY: debug
+debug: CXXFLAGS+=-g
+debug: BUILD_TYPE:=debug
+debug: __debug
+
+.PHONY: clean
+clean:
+	$(LOG_INFO) rm -fr $(BUILD_INFO) $(EXE) $(EXE).dSYM $(OBJS)
+
+.PHONY: cleandeps
+cleandeps:
+	$(LOG_INFO) rm -f $(DEPS)
+
+.PHONY: cleanall
+cleanall: clean cleandeps
+	$(LOG_INFO) rm -fr $(PATCH_STAGING) $(PATCH_WORKING)
+	$(LOG_TRACE) if [ -d $(BUILDDIR) ]; then \
+		rmdir $(BUILDDIR); \
+	fi
+
+.PHONY: diff
+diff:| $(BUILDDIR)
+	$(LOG_INFO) git diff --staged > $(PATCH_STAGING)
+	$(LOG_INFO) git diff > $(PATCH_WORKING)
+
+######################
+### HELPER TARGETS ###
+######################
+
+.PHONY: info
+info:| $(BUILDDIR)
+	$(LOG_TRACE) echo "=====ENVIRONMENT>>>>>" > $(BUILD_INFO)
+	$(LOG_TRACE) env >> $(BUILD_INFO)
+	$(LOG_TRACE) echo >> $(BUILD_INFO)
+	$(LOG_TRACE) echo "=====INFO>>>>>" >> $(BUILD_INFO)
+	$(LOG_TRACE) echo "build-type: $(BUILD_TYPE)" >> $(BUILD_INFO)
+	$(LOG_TRACE) echo "dirty: $(DIRTY)" >> $(BUILD_INFO)
+	$(LOG_TRACE) echo "git-commit-hash: $(shell git rev-parse HEAD)" >> $(BUILD_INFO)
+
+#FIXME: info target should depend on whether $(EXE) is up to date.
+.PHONY: __release
+__release:| $(EXE) info
+
+.PHONY: __debug
+__debug:| $(EXE) info
+
+#FIXME: non-build related changes may result in new diffs for previously
+#       built binaries.
+$(EXE): $(OBJS) $(DEPS)
+	$(LOG_INFO) $(CXX) $(OBJS) $(LDFLAGS) -o $(EXE)
+	$(LOG_TRACE) if [ $(DIRTY) -ne 0 -a $(WITH_DIFF) -ne 0 ]; then \
+		$(MAKE) diff; \
+	fi
+
+# Create BUILDDIR if it doesn't exist
+$(BUILDDIR):
+	$(LOG_INFO) mkdir -p $(BUILDDIR)
+$(OBJS):| $(BUILDDIR)
+
+# Ignore 'no rule to make target' for nonexistent dependency
+$(BUILDDIR)/%.d:;
+
+# Build object file from source
+$(BUILDDIR)/%.o: $(SRCDIR)/%.cxx
+	$(LOG_INFO) $(CXX) $(CXXFLAGS) $(DEPFLAGS) $(INCDIRS) -c $< -o $@
+
+# Include dependencies
+-include $(DEPS)

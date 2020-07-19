@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+message System {
+  enum Phase {
+    PreInitialize = 0;
+    Initialize = 1;
+    PostInitialize = 2;
+
+    PreReady = 3;
+    Ready = 4;
+    PostReady = 5;
+
+    PreStart = 6;
+    Start = 7;
+    PostStart = 8;
+
+    PreTerminate = 9;
+    Terminate = 10;
+    PostTerminate = 11;
+  }
+
+  Phase phase = 1;
+  string method = 2;
+}

@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+message Increment {
+  int64 value = 1;
+}
