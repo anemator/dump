@@ -8,8 +8,10 @@
 .merlin
 .metals/
 .mkdir
+.stack-work/
 /.vagrant/
 _build/
 a.out
 project/
+stack.yaml.lock
 target/
